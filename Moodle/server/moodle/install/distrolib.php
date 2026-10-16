@@ -14,8 +14,8 @@ function distro_get_config() {
     $config->phpversion = '8.2.4 (VS16 X86 64bit thread safe) + PEAR';
     $config->dbname = 'MariaDB';
     $config->dbversion = '10.4.28';
-    $config->moodlerelease = '5.3dev (Build: 20260818)';
-    $config->moodleversion = '2026081800.00';
+    $config->moodlerelease = '6.0dev (Build: 20261013)';
+    $config->moodleversion = '2026100500.02';
     $config->dbtype='mariadb';
     $config->dbhost='localhost';
     $config->dbuser='root';

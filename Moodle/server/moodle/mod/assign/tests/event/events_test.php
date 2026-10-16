@@ -43,6 +43,15 @@ require_once($CFG->dirroot . '/mod/assign/locallib.php');
  * @copyright 2014 Adrian Greeve <adrian@moodle.com>
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_assign\event\submission_removed::class)]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\assign::class, 'save_user_extension')]
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_assign\event\submission_status_updated::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_assign\event\marker_added::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_assign\event\marker_removed::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_assign\event\marker_enabled_updated::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_assign\event\workflow_state_updated::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_assign\event\submission_marked::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_assign\event\agreed_grade_calculated::class)]
 final class events_test extends \advanced_testcase {
     // Use the generator helper.
     use mod_assign_test_generator;
@@ -196,8 +205,6 @@ final class events_test extends \advanced_testcase {
 
     /**
      * Test submission_removed event.
-     *
-     * @covers \mod_assign\event\submission_removed
      */
     public function test_submission_removed(): void {
         $this->resetAfterTest();
@@ -229,8 +236,6 @@ final class events_test extends \advanced_testcase {
 
     /**
      * Test submission_removed event when a team submission is removed.
-     *
-     * @covers \mod_assign\event\submission_removed
      */
     public function test_team_submission_removed(): void {
         $this->resetAfterTest();
@@ -270,8 +275,6 @@ final class events_test extends \advanced_testcase {
 
     /**
      * Test event creation for save_user_extension().
-     *
-     * @covers \assign::save_user_extension
      */
     public function test_extension_granted(): void {
         global $DB, $CFG;
@@ -411,8 +414,6 @@ final class events_test extends \advanced_testcase {
 
     /**
      * Test submission_status_updated event when a submission is updated.
-     *
-     * @covers \mod_assign\event\submission_status_updated
      */
     public function test_submission_status_updated_on_update(): void {
         $this->resetAfterTest();
@@ -444,8 +445,6 @@ final class events_test extends \advanced_testcase {
 
     /**
      * Test submission_status_updated event when a submission is removed.
-     *
-     * @covers \mod_assign\event\submission_status_updated
      */
     public function test_submission_status_updated_on_remove(): void {
         $this->resetAfterTest();
@@ -475,8 +474,6 @@ final class events_test extends \advanced_testcase {
 
     /**
      * Test submission_status_updated event when a team submission is removed.
-     *
-     * @covers \mod_assign\event\submission_status_updated
      */
     public function test_team_submission_status_updated_on_remove(): void {
         $this->resetAfterTest();
@@ -512,7 +509,10 @@ final class events_test extends \advanced_testcase {
         $sink->close();
     }
 
-    public function test_marker_updated(): void {
+    /**
+     * Test marker_added event when a marker is allocated.
+     */
+    public function test_marker_added(): void {
         $this->resetAfterTest();
 
         $course = $this->getDataGenerator()->create_course();
@@ -522,23 +522,135 @@ final class events_test extends \advanced_testcase {
         $teacher->ignoresesskey = true;
         $this->setUser($teacher);
 
-        $assign = $this->create_instance($course);
+        $assign = $this->create_instance($course, [
+            'markingworkflow' => 1,
+            'markingallocation' => 1,
+            'markercount' => 1,
+        ]);
 
         $sink = $this->redirectEvents();
-        $assign->testable_process_set_batch_marking_allocation($student->id, $teacher->id);
+        $assign->update_marker_allocations($student->id, [1 => [$teacher->id]]);
 
         $events = $sink->get_events();
         $this->assertCount(1, $events);
         $event = reset($events);
-        $this->assertInstanceOf('\mod_assign\event\marker_updated', $event);
+
+        $allocatedmarkers = $assign->get_marker_allocations($student->id);
+        $allocatedmarker = reset($allocatedmarkers);
+        $this->assertInstanceOf('\mod_assign\event\marker_added', $event);
         $this->assertEquals($assign->get_context(), $event->get_context());
-        $this->assertEquals($assign->get_instance()->id, $event->objectid);
+        $this->assertEquals($allocatedmarker->id, $event->objectid);
         $this->assertEquals($student->id, $event->relateduserid);
         $this->assertEquals($teacher->id, $event->userid);
         $this->assertEquals($teacher->id, $event->other['markerid']);
         $sink->close();
     }
 
+    /**
+     * Test marker_removed event when a marker is unallocated.
+     */
+    public function test_marker_removed(): void {
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $teacher1 = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $teacher2 = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        $teacher1->ignoresesskey = true;
+        $this->setUser($teacher1);
+
+        $assign = $this->create_instance($course, [
+            'markingworkflow' => 1,
+            'markingallocation' => 1,
+            'markercount' => 1,
+        ]);
+
+        // Add allocated marker.
+        $assign->update_marker_allocations($student->id, [1 => [$teacher1->id]]);
+        $allocatedmarkers = $assign->get_marker_allocations($student->id);
+        $allocatedmarker = reset($allocatedmarkers);
+
+        // Test marker removed.
+        $sink = $this->redirectEvents();
+        $assign->update_marker_allocations($student->id, [1 => [$teacher2->id]]);
+
+        // When the marker changes there should be one event for removed and one for added.
+        $events = $sink->get_events();
+        $this->assertCount(2, $events);
+        $event = reset($events);
+
+        $this->assertInstanceOf('\mod_assign\event\marker_removed', $event);
+        $this->assertEquals($assign->get_context(), $event->get_context());
+        $this->assertEquals($allocatedmarker->id, $event->objectid);
+        $this->assertEquals($student->id, $event->relateduserid);
+        $this->assertEquals($teacher1->id, $event->userid);
+        $this->assertEquals($teacher1->id, $event->other['markerid']);
+        $sink->close();
+    }
+
+    /**
+     * Test marker_enabled_updated event when an optional marker is enabled or disabled.
+     */
+    public function test_marker_enabled_updated(): void {
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        $teacher->ignoresesskey = true;
+        $this->setUser($teacher);
+
+        $assign = $this->create_instance($course, [
+            'markingworkflow' => 1,
+            'markingallocation' => 1,
+            'markercount' => 1,
+            'optionalmarkercount' => 1,
+        ]);
+
+        // Test enabling optional marker.
+        $sink = $this->redirectEvents();
+        $assign->update_marker_allocations($student->id, [2 => [0, 1]]);
+
+        $events = $sink->get_events();
+        $this->assertCount(1, $events);
+        $event = reset($events);
+
+        $allocatedmarkers = $assign->get_marker_allocations($student->id);
+        $allocatedmarker = reset($allocatedmarkers);
+        $this->assertInstanceOf('\mod_assign\event\marker_enabled_updated', $event);
+        $this->assertEquals($assign->get_context(), $event->get_context());
+        $this->assertEquals($allocatedmarker->id, $event->objectid);
+        $this->assertEquals($student->id, $event->relateduserid);
+        $this->assertEquals($teacher->id, $event->userid);
+        $this->assertEquals(2, $event->other['markernumber']);
+        $this->assertEquals($allocatedmarker->enabled, $event->other['enabled']);
+        $sink->close();
+
+        // Test disabling optional marker.
+        $sink = $this->redirectEvents();
+        $assign->update_marker_allocations($student->id, [2 => [0, 0]]);
+
+        $events = $sink->get_events();
+        $this->assertCount(1, $events);
+        $event = reset($events);
+
+        // The record is removed, so the event should have the previous id.
+        $this->assertEmpty($assign->get_marker_allocations($student->id));
+        $this->assertInstanceOf('\mod_assign\event\marker_enabled_updated', $event);
+        $this->assertEquals($assign->get_context(), $event->get_context());
+        $this->assertEquals($allocatedmarker->id, $event->objectid);
+        $this->assertEquals($student->id, $event->relateduserid);
+        $this->assertEquals($teacher->id, $event->userid);
+        $this->assertEquals(2, $event->other['markernumber']);
+        $this->assertFalse($event->other['enabled']);
+        $sink->close();
+    }
+
+    /**
+     * Test workflow_state_updated event when the workflow state is updated.
+     */
     public function test_workflow_state_updated(): void {
         $this->resetAfterTest();
 
@@ -549,7 +661,7 @@ final class events_test extends \advanced_testcase {
         $teacher->ignoresesskey = true;
         $this->setUser($teacher);
 
-        $assign = $this->create_instance($course);
+        $assign = $this->create_instance($course, ['markingworkflow' => 1]);
 
         // Test process_set_batch_marking_workflow_state.
         $sink = $this->redirectEvents();
@@ -584,7 +696,7 @@ final class events_test extends \advanced_testcase {
         $assign->testable_apply_grade_to_user($data, $student->id, 0);
 
         $events = $sink->get_events();
-        $this->assertCount(4, $events);
+        $this->assertCount(2, $events);
         $event = reset($events);
         $this->assertInstanceOf('\mod_assign\event\workflow_state_updated', $event);
         $this->assertEquals($assign->get_context(), $event->get_context());
@@ -606,7 +718,7 @@ final class events_test extends \advanced_testcase {
         $assign->testable_process_save_quick_grades($data);
 
         $events = $sink->get_events();
-        $this->assertCount(4, $events);
+        $this->assertCount(2, $events);
         $event = reset($events);
         $this->assertInstanceOf('\mod_assign\event\workflow_state_updated', $event);
         $this->assertEquals($assign->get_context(), $event->get_context());
@@ -738,6 +850,172 @@ final class events_test extends \advanced_testcase {
         $this->assertEquals($grade->id, $event->objectid);
         $this->assertEquals($student->id, $event->relateduserid);
         $sink->close();
+    }
+
+    /**
+     * Test submission_marked event when an allocated marker marks.
+     */
+    public function test_submission_marked(): void {
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $teacher1 = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $teacher2 = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        $teacher1->ignoresesskey = true;
+        $this->setUser($teacher1);
+
+        $assign = $this->create_instance($course, [
+            'markingworkflow' => 1,
+            'markingallocation' => 1,
+            'markercount' => 2,
+            'multimarkmethod' => ASSIGN_MULTIMARKING_METHOD_AVERAGE,
+            'multimarkrounding' => ASSIGN_MULTIMARKING_AVERAGE_ROUND_NONE,
+        ]);
+
+        $sink = $this->redirectEvents();
+        $markerids = [1 => $teacher1->id, 2 => $teacher2->id];
+        $assign->update_marker_allocations($student->id, [
+            1 => [$teacher1->id],
+            2 => [$teacher2->id],
+        ]);
+
+        // Test update mark with apply_grade_to_user.
+        $sink = $this->redirectEvents();
+        $data = (object) [
+            'mark' => '50.0',
+            'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_READYFORREVIEW,
+        ];
+        $assign->testable_apply_grade_to_user($data, $student->id, 0);
+
+        // Submission marked event, workflow updated event.
+        $events = $sink->get_events();
+        $this->assertCount(2, $events);
+        $event = reset($events);
+
+        $grade = $assign->get_user_grade($student->id, false, 0);
+        $mark = $assign->get_mark($grade->id, $teacher1->id);
+        $this->assertInstanceOf('\mod_assign\event\submission_marked', $event);
+        $this->assertEquals($assign->get_context(), $event->get_context());
+        $this->assertEquals($mark->id, $event->objectid);
+        $this->assertEquals($student->id, $event->relateduserid);
+        $this->assertEquals(50, $event->other['mark']);
+        $this->assertArrayNotHasKey('draft', $event->other);
+        $sink->close();
+
+        // Test teacher 2 and submission graded calculated event.
+        $teacher2->ignoresesskey = true;
+        $this->setUser($teacher2);
+
+        $sink = $this->redirectEvents();
+        $data = (object) [
+            'mark' => '70.0',
+            'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_READYFORREVIEW,
+        ];
+        $assign->testable_apply_grade_to_user($data, $student->id, 0);
+
+        // Submission marked event, workflow updated event, submission graded event, agreed grade calculated event.
+        $events = $sink->get_events();
+        $this->assertCount(4, $events);
+        $event = reset($events);
+
+        $mark = $assign->get_mark($grade->id, $teacher2->id);
+        $this->assertInstanceOf('\mod_assign\event\submission_marked', $event);
+        $this->assertEquals($assign->get_context(), $event->get_context());
+        $this->assertEquals($mark->id, $event->objectid);
+        $this->assertEquals($student->id, $event->relateduserid);
+        $this->assertEquals(70, $event->other['mark']);
+        $this->assertArrayNotHasKey('draft', $event->other);
+        $sink->close();
+
+        // Test update mark with process_save_quick_grades.
+        $sink = $this->redirectEvents();
+        $data = [
+            'grademodified_' . $student->id => time(),
+            'gradeattempt_' . $student->id => $grade->attemptnumber,
+            'quickgrade_' . $student->id . '_allocatedmarker' => $markerids,
+            'quickmark_' . $student->id . '_' . $teacher2->id => '60.0',
+        ];
+        $assign->testable_process_save_quick_grades($data);
+
+        // Submission marked event, submission graded event, agreed grade calculated event.
+        $events = $sink->get_events();
+        $this->assertCount(3, $events);
+        $event = reset($events);
+
+        $mark = $assign->get_mark($grade->id, $teacher2->id);
+        $this->assertInstanceOf('\mod_assign\event\submission_marked', $event);
+        $this->assertEquals($assign->get_context(), $event->get_context());
+        $this->assertEquals($mark->id, $event->objectid);
+        $this->assertEquals($student->id, $event->relateduserid);
+        $this->assertEquals(60, $event->other['mark']);
+        $this->assertArrayNotHasKey('draft', $event->other);
+        $sink->close();
+    }
+
+    /**
+     * Test agreed_grade_calculated event when an agreed grade is calculated.
+     */
+    public function test_agreed_grade_calculated(): void {
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $teacher1 = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $teacher2 = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        $teacher1->ignoresesskey = true;
+        $this->setUser($teacher1);
+
+        $assign = $this->create_instance($course, [
+            'markingworkflow' => 1,
+            'markingallocation' => 1,
+            'markercount' => 2,
+            'multimarkmethod' => ASSIGN_MULTIMARKING_METHOD_AVERAGE,
+            'multimarkrounding' => ASSIGN_MULTIMARKING_AVERAGE_ROUND_NONE,
+        ]);
+
+        $assign->update_marker_allocations($student->id, [
+            1 => [$teacher1->id],
+            2 => [$teacher2->id],
+        ]);
+
+        // Update marks with apply_grade_to_user.
+        $data = (object) [
+            'mark' => '50.0',
+            'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_READYFORREVIEW,
+        ];
+        $assign->testable_apply_grade_to_user($data, $student->id, 0);
+
+        // Test grade is calculated when all users have marked.
+        $teacher2->ignoresesskey = true;
+        $this->setUser($teacher2);
+
+        $sink = $this->redirectEvents();
+        $data = (object) [
+            'mark' => '70.0',
+            'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_READYFORREVIEW,
+        ];
+        $assign->testable_apply_grade_to_user($data, $student->id, 0);
+
+        $events = $sink->get_events();
+        $sink->close();
+
+        $eventcount = 0;
+        $grade = $assign->get_user_grade($student->id, true);
+        foreach ($events as $event) {
+            if ($event instanceof \mod_assign\event\agreed_grade_calculated) {
+                $eventcount += 1;
+                $this->assertInstanceOf('\mod_assign\event\agreed_grade_calculated', $event);
+                $this->assertEquals($assign->get_context(), $event->get_context());
+                $this->assertEquals($grade->id, $event->objectid);
+                $this->assertEquals($student->id, $event->relateduserid);
+                $this->assertEquals(ASSIGN_MULTIMARKING_METHOD_AVERAGE, $event->other['method']);
+                $this->assertEquals([$teacher1->id, $teacher2->id], $event->other['markerids']);
+            }
+        }
+        $this->assertEquals(1, $eventcount);
     }
 
     /**

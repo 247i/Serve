@@ -562,6 +562,25 @@ class user {
     }
 
     /**
+     * Get the user record for the system user.
+     *
+     * @return stdClass user record
+     */
+    public static function get_system_user(): stdClass {
+        global $CFG;
+
+        // The system user is essentially the admin user, but with some value removed.
+        // We ignore the timezone language, and locale preferences - use the site default instead.
+        $systemuser = get_admin();
+        $systemuser->timezone = $CFG->timezone;
+        $systemuser->lang = '';
+        $systemuser->theme = '';
+        unset($systemuser->description);
+
+        return $systemuser;
+    }
+
+    /**
      * Reset self::$noreplyuser and self::$supportuser.
      * This is only used by phpunit, and there is no other use case for this function.
      * Please don't use it outside phpunit.
@@ -1648,13 +1667,26 @@ class user {
      *
      * @param context $context Context we are in.
      * @param string $usersearch Array of field mappings (fieldname => SQL code for the value)
+     * @param bool $allowcustom Allow search custom profile field.
+     * @param array $custommappings Custom mapping fields.
      * @return array SQL query data in the format ['where' => '', 'params' => []].
      */
-    public static function get_users_search_sql(context $context, string $usersearch = ''): array {
+    public static function get_users_search_sql(
+        context $context,
+        string $usersearch = '',
+        bool $allowcustom = false,
+        array $custommappings = []
+    ): array {
         global $DB, $USER;
 
-        $userfields = fields::for_identity($context, false)->with_userpic();
-        ['mappings' => $mappings]  = (array)$userfields->get_sql('u', true);
+        $userfields = fields::for_identity($context, $allowcustom)->with_userpic();
+        if (empty($custommappings)) {
+            ['mappings' => $mappings]  = (array) $userfields->get_sql('u', true);
+        } else {
+            // If we need to query custom profile fields,
+            // we should use the custom mapping fields to maintain the same alias in the query.
+            $mappings = $custommappings;
+        }
         $userfields = $userfields->get_required_fields();
 
         $canviewfullnames = has_capability('moodle/site:viewfullnames', $context);
@@ -1703,7 +1735,7 @@ class user {
         $conditions[] = $idnumber;
 
         // Search all user identify fields.
-        $extrasearchfields = fields::get_identity_fields(null, false);
+        $extrasearchfields = fields::get_identity_fields(null, $allowcustom);
         foreach ($extrasearchfields as $fieldindex => $extrasearchfield) {
             if (in_array($extrasearchfield, ['email', 'idnumber', 'country'])) {
                 // Already covered above.
@@ -1911,6 +1943,11 @@ class user {
             $updaterecord = (object) $changedattributes;
             $updaterecord->id = $currentrecord->id;
             $DB->update_record('user', $updaterecord);
+
+            if (array_key_exists('email', $changedattributes)) {
+                // Invalidate any outstanding forgot-password tokens, as they were sent to the old email address.
+                $DB->delete_records('user_password_resets', ['userid' => $currentrecord->id]);
+            }
         }
 
         if ($updatepassword) {

@@ -31,8 +31,10 @@ require_once(__DIR__ . '/../fixtures/task_fixtures.php');
  * @category  test
  * @copyright 2019 Brendan Heywood <brendan@catalyst-au.net>
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers \core\task\manager
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\core\task\manager::class)]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\core\task\manager::class, 'get_next_adhoc_task')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\core\task\manager::class, 'adhoc_task_delayed')]
 final class manager_test extends \advanced_testcase {
     /**
      * Data provider for test_get_candidate_adhoc_tasks.
@@ -210,7 +212,6 @@ final class manager_test extends \advanced_testcase {
     /**
      * Test that the candidate adhoc tasks are returned in the right order.
      *
-     * @dataProvider get_candidate_adhoc_tasks_provider
      *
      * @param int $concurrencylimit The max number of runners each task can consume
      * @param int $limit SQL limit
@@ -218,6 +219,7 @@ final class manager_test extends \advanced_testcase {
      * @param array $tasks Array of tasks to put in DB and retrieve
      * @param array $expected Array of expected classnames
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('get_candidate_adhoc_tasks_provider')]
     public function test_get_candidate_adhoc_tasks(
         int $concurrencylimit,
         int $limit,
@@ -352,8 +354,6 @@ final class manager_test extends \advanced_testcase {
      * Test that get_next_adhoc_task() skips orphaned tasks whose class no longer exists
      * (e.g. because the providing plugin was removed) instead of throwing and blocking
      * dispatch of other valid tasks.
-     *
-     * @covers \core\task\manager::get_next_adhoc_task
      */
     public function test_get_next_adhoc_task_skips_orphaned_task_with_invalid_classname(): void {
         global $DB;
@@ -585,11 +585,10 @@ final class manager_test extends \advanced_testcase {
      * Test that adhoc_task_delayed schedules a task correctly, for both exponential
      * backoff (null delay) and an explicit soft retry delay.
      *
-     * @covers \core\task\manager::adhoc_task_delayed
-     * @dataProvider adhoc_task_delayed_provider
      * @param int|null $softretrydelay The soft retry delay to set (null for exponential backoff).
      * @param int $expectednextruntime The expected next run time after the delay.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('adhoc_task_delayed_provider')]
     public function test_adhoc_task_delayed(?int $softretrydelay, int $expectednextruntime): void {
         global $DB;
 
@@ -696,10 +695,69 @@ final class manager_test extends \advanced_testcase {
         $next = \core\task\manager::get_next_scheduled_task($clock->time() + 10);
         $this->assertNull($next);
 
-        manager::set_scheduled_task_nextruntime($first, $clock->time() + 20);
+        $this->assertTrue(manager::set_scheduled_task_nextruntime($first, $clock->time() + 20));
 
         $next = \core\task\manager::get_next_scheduled_task($clock->time() + 30);
         $this->assertNotNull($next);
         manager::scheduled_task_complete($next);
+    }
+
+    /**
+     * Test that a running task cannot have its next run time changed.
+     */
+    public function test_set_scheduled_task_nextruntime_rejects_running_task(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $clock = $this->mock_clock_with_frozen();
+        set_config('lock_factory', '\core\lock\db_record_lock_factory');
+
+        // Disable all the tasks, so we can insert our own and be sure it is the only one being run.
+        $DB->set_field('task_scheduled', 'disabled', 1);
+
+        $task = new scheduled_test_task();
+        $originalnextruntime = $clock->time() + HOURSECS;
+        $task->set_next_run_time($originalnextruntime);
+        $classname = manager::get_canonical_class_name($task);
+        $DB->insert_record('task_scheduled', manager::record_from_scheduled_task($task));
+
+        // Reject the change when the task has running metadata, even if its execution lock has gone stale.
+        $DB->set_field('task_scheduled', 'timestarted', $clock->time(), ['classname' => $classname]);
+        $this->assertFalse(manager::set_scheduled_task_nextruntime($task, $clock->time() - HOURSECS));
+        $DB->set_field('task_scheduled', 'timestarted', null, ['classname' => $classname]);
+
+        // Also reject the change during the window after the execution lock is acquired but before metadata is recorded.
+        $lockfactory = \core\lock\lock_config::get_lock_factory('cron');
+        $lock = $lockfactory->get_lock($classname, 10);
+        $this->assertNotFalse($lock);
+        try {
+            $result = manager::set_scheduled_task_nextruntime($task, $clock->time() - HOURSECS);
+        } finally {
+            $lock->release();
+        }
+
+        $this->assertFalse($result);
+        $this->assertSame(
+            $originalnextruntime,
+            (int)$DB->get_field('task_scheduled', 'nextruntime', ['classname' => $classname]),
+        );
+    }
+
+    /**
+     * Test enabling and disabling cron.
+     */
+    public function test_cron_enabled(): void {
+        $this->resetAfterTest();
+
+        // Check that cron is enabled by default.
+        $this->assertTrue(\core\task\manager::is_cron_enabled());
+
+        // Disable cron and check again.
+        \core\task\manager::disable_cron();
+        $this->assertFalse(\core\task\manager::is_cron_enabled());
+
+        // Enable cron and check again.
+        \core\task\manager::enable_cron();
+        $this->assertTrue(\core\task\manager::is_cron_enabled());
     }
 }

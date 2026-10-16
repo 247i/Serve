@@ -2600,13 +2600,28 @@ EOD;
      */
     public function edit_switch() {
         if ($this->page->user_allowed_editing()) {
+            // Generated once here, rather than via the template's own {{uniqid}} helper, so the
+            // same id can be shared between the reactprops below and the NonJS fallback markup.
+            $elementid = html_writer::random_id('editingswitch');
+            $checked = $this->page->user_is_editing();
             $temp = (object) [
                 'legacyseturl' => (new moodle_url('/editmode.php'))->out(false),
                 'pagecontextid' => $this->page->context->id,
                 'pageurl' => $this->page->url,
                 'sesskey' => sesskey(),
+                'elementid' => $elementid,
+                // JSON props for the core/EditModeSwitch React component (core/nav/PrimaryNav's
+                // export_react_props() pattern): built server-side so the React markup and the
+                // NonJS fallback markup below can never disagree about id/label/state.
+                'reactprops' => json_encode([
+                    'id' => $elementid,
+                    'context' => $this->page->context->id,
+                    'pageurl' => $this->page->url->out(false),
+                    'checked' => $checked,
+                    'label' => get_string('editmode'),
+                ], JSON_UNESCAPED_UNICODE),
             ];
-            if ($this->page->user_is_editing()) {
+            if ($checked) {
                 $temp->checked = true;
             }
             return $this->render_from_template('core/editswitch', $temp);
@@ -2663,6 +2678,9 @@ EOD;
 
         $output = '';
         $obbuffer = '';
+
+        // Do not display the navigation footer when encountering an error.
+        $this->page->set_show_navigation_footer(false);
 
         if ($this->has_started()) {
             // we can not always recover properly here, we have problems with output buffering,
@@ -2903,7 +2921,9 @@ EOD;
      * @return string the HTML to output.
      */
     public function skip_link_target($id = null) {
-        return html_writer::span('', '', ['id' => $id]);
+        // The tabindex="-1" makes the target focusable so that activating the skip link moves
+        // keyboard focus to it, rather than leaving focus on the link (which would trap the user).
+        return html_writer::span('', '', ['id' => $id, 'tabindex' => -1]);
     }
 
     /**
@@ -4735,22 +4755,7 @@ EOD;
      * @return string
      */
     public function render_login(\core_auth\output\login $form) {
-        global $CFG, $SITE;
-
         $context = $form->export_for_template($this);
-
-        $context->errorformatted = $this->error_text($context->error);
-        $url = $this->get_logo_url();
-        if ($url) {
-            $url = $url->out(false);
-        }
-        $context->logourl = $url;
-        $context->sitename = format_string(
-            $SITE->fullname,
-            true,
-            ['context' => context_course::instance(SITEID), "escape" => false]
-        );
-        $context->hasauthinstructions = !empty($CFG->auth_instructions);
 
         return $this->render_from_template('core/loginform', $context);
     }

@@ -24,7 +24,7 @@
     }
 
     .dropdown-subpanel.content-displayed {
-        background-color: $gray-200;
+        background-color: var(--#{$prefix}gray-200);
     }
 
     .dropdown-subpanel-content {
@@ -37,9 +37,12 @@
     }
 
     // Fix subpanel position to be aligned with the parent item.
+    // Only applies when the subpanel is anchored via its top edge (placement ending in "-start").
+    // Placements ending in "-end" are anchored via their bottom edge (bottom: 0), so forcing
+    // "top" here as well would over-constrain the box height and make its content overflow.
     .dropstart,
     .dropend {
-        .dropdown-subpanel-content.dropdown-menu[data-bs-popper] {
+        .dropdown-subpanel-content.dropdown-menu[data-bs-popper][data-popper-placement$="-start"] {
             /* stylelint-disable declaration-no-important */
             top: calc(-#{$dropdown-header-padding-y} - #{$dropdown-border-width}) !important;
             /* stylelint-enable declaration-no-important */
@@ -85,7 +88,7 @@
     a {
         display: block;
         width: 100%;
-        color: $body-color;
+        color: var(--#{$prefix}body-color);
     }
 
     &.active,

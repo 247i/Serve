@@ -30,7 +30,7 @@ use Override;
 class export_multiple_xml_action extends bulk_action_base {
     #[\Override]
     public function get_bulk_action_title(): string {
-        return get_string('exporttoxml', 'qbank_exporttoxml');
+        return get_string('exportasxml', 'question');
     }
 
     #[\Override]
@@ -53,5 +53,10 @@ class export_multiple_xml_action extends bulk_action_base {
         return [
             'moodle/question:viewall',
         ];
+    }
+
+    #[\Override]
+    public function get_action_icon(): string {
+        return 'i/export';
     }
 }

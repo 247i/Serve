@@ -32,8 +32,8 @@ use quiz_statistics\tests\statistics_test_trait;
  * @copyright 2023 onwards Catalyst IT EU {@link https://catalyst-eu.net}
  * @author    Mark Johnson <mark.johnson@catalyst-eu.net>
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers    \quiz_statistics\hook_callbacks::quiz_attempt_submitted_or_deleted
  */
+#[\PHPUnit\Framework\Attributes\CoversMethod(\quiz_statistics\hook_callbacks::class, 'quiz_attempt_submitted_or_deleted')]
 final class quiz_attempt_submitted_test extends \advanced_testcase {
     use \quiz_question_helper_test_trait;
     use statistics_test_trait;
@@ -128,6 +128,7 @@ final class quiz_attempt_submitted_test extends \advanced_testcase {
 
         $tasks = manager::get_adhoc_tasks(recalculate::class);
         $this->assertCount(2, $tasks);
+        usort($tasks, fn(recalculate $a, recalculate $b): int => $a->get_custom_data()->quizid <=> $b->get_custom_data()->quizid);
         $task1 = array_shift($tasks);
         $this->assert_task_is_queued_for_quiz($task1, $quiz1);
         $task2 = array_shift($tasks);

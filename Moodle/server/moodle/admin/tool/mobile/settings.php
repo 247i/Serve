@@ -67,8 +67,10 @@ if ($hassiteconfig || has_capability('moodle/site:configview', context_system::i
         $premiumfeaturesurl = (new moodle_url("/admin/settings.php", ['section' => 'premiumfeatures']))->out(true);
     }
 
+    $ismobilewsdisabled = empty($CFG->enablemobilewebservice);
+
     // Contextual Premium plan promotions at the top of related core settings pages.
-    if ($hassiteconfig && !during_initial_install() && !$ispremiumplan) {
+    if ($hassiteconfig && !during_initial_install() && !$ismobilewsdisabled && !$ispremiumplan) {
         $subscriptionurl = (new moodle_url('/admin/tool/mobile/subscription.php'))->out(false);
 
         $haslogos = !empty(get_config('core_admin', 'logo')) || !empty(get_config('core_admin', 'logocompact'));
@@ -110,7 +112,6 @@ if ($hassiteconfig || has_capability('moodle/site:configview', context_system::i
     }
 
     // Setting pages group.
-    $ismobilewsdisabled = empty($CFG->enablemobilewebservice);
     $ADMIN->add(
         'root',
         new admin_category('mobileapp', new lang_string('mobileapp', 'tool_mobile'), $ismobilewsdisabled),
@@ -159,7 +160,7 @@ if ($hassiteconfig || has_capability('moodle/site:configview', context_system::i
         $templateheadersettings = [
             'title' => new lang_string('upgraderemovelimits', 'tool_mobile', $upgradeplanname),
             'icon' => '🚀',
-            'message' => clean_text(get_string('upgradeplanlimits', 'tool_mobile', $planname)),
+            'message' => get_string('upgradeplanlimits', 'tool_mobile', $planname),
             'buttonstr' => new lang_string('learnmore', 'tool_mobile'),
             'buttonurl' => (new \moodle_url("/admin/tool/mobile/subscription.php"))->out(true),
         ];
@@ -295,8 +296,7 @@ if ($hassiteconfig || has_capability('moodle/site:configview', context_system::i
     $temp->hide_if('tool_mobile/qrsameipcheck', 'tool_mobile/qrcodetype', 'neq', tool_mobile\api::QR_CODE_LOGIN);
 
     if (!$ispremiumplan && get_config('tool_mobile', 'qrcodetype') == tool_mobile\api::QR_CODE_LOGIN) {
-        $featureparams['feature'] = get_string('qrcodetypelogin', 'tool_mobile');
-        $templatesubscribe['message'] = clean_text(get_string('qronlypremium', 'tool_mobile', $featureparams));
+        $templatesubscribe['message'] = get_string('qrcodetypeloginonlypremium', 'tool_mobile', $featureparams);
 
         $temp->add(new admin_setting_heading(
             'tool_mobile/qronlypremium',
@@ -304,6 +304,7 @@ if ($hassiteconfig || has_capability('moodle/site:configview', context_system::i
             $OUTPUT->render_from_template('tool_mobile/subscribe_alert', $templatesubscribe)
         ));
     }
+
     $temp->add(new admin_setting_heading(
         'tool_mobile/customisation',
         new lang_string('customisation', 'tool_mobile'),
@@ -311,18 +312,17 @@ if ($hassiteconfig || has_capability('moodle/site:configview', context_system::i
     ));
 
     $options = tool_mobile\api::get_features_list();
-    $featurename = new lang_string('disabledfeatures', 'tool_mobile');
+    $disabledfeatures = new lang_string('disabledfeatures', 'tool_mobile');
     $temp->add(new admin_setting_configmultiselect(
         'tool_mobile/disabledfeatures',
-        $featurename,
+        $disabledfeatures,
         new lang_string('disabledfeatures_desc', 'tool_mobile'),
         [],
         $options
     ));
     if (!$ispremiumplan && isset($featureslimited['disabledfeatures'])) {
         $featureparams['limit'] = $featureslimited['disabledfeatures'];
-        $featureparams['feature'] = strtolower($featurename);
-        $templatesubscribe['message'] = clean_text(get_string('limiteddisabledfeature', 'tool_mobile', $featureparams));
+        $templatesubscribe['message'] = get_string('limiteddisabledfeatures', 'tool_mobile', $featureparams);
 
         $temp->add(new admin_setting_heading(
             'tool_mobile/disabledfeaturessubscribe',
@@ -345,9 +345,7 @@ if ($hassiteconfig || has_capability('moodle/site:configview', context_system::i
     ));
     if (!$ispremiumplan && isset($featureslimited['custommenuitems'])) {
         $featureparams['limit'] = $featureslimited['custommenuitems'];
-        $featureparams['feature1'] = strtolower($custommenuitemsstr);
-        $featureparams['feature2'] = strtolower($customusermenuitemsstr);
-        $templatesubscribe['message'] = clean_text(get_string('limiteddisabledfeature_related', 'tool_mobile', $featureparams));
+        $templatesubscribe['message'] = get_string('limitedmenuitems', 'tool_mobile', $featureparams);
 
         $temp->add(new admin_setting_heading(
             'tool_mobile/custommenuitemssubscribe',
@@ -367,9 +365,7 @@ if ($hassiteconfig || has_capability('moodle/site:configview', context_system::i
     ));
     if (!$ispremiumplan && isset($featureslimited['custommenuitems'])) {
         $featureparams['limit'] = $featureslimited['custommenuitems'];
-        $featureparams['feature1'] = strtolower($customusermenuitemsstr);
-        $featureparams['feature2'] = strtolower($custommenuitemsstr);
-        $templatesubscribe['message'] = clean_text(get_string('limiteddisabledfeature_related', 'tool_mobile', $featureparams));
+        $templatesubscribe['message'] = get_string('limitedmenuitems', 'tool_mobile', $featureparams);
 
         $temp->add(new admin_setting_heading(
             'tool_mobile/customusermenuitemssubscribe',
@@ -390,8 +386,7 @@ if ($hassiteconfig || has_capability('moodle/site:configview', context_system::i
     ));
     if (!$ispremiumplan && isset($featureslimited['customlangstrings'])) {
         $featureparams['limit'] = $featureslimited['customlangstrings'];
-        $featureparams['feature'] = strtolower($featurename);
-        $templatesubscribe['message'] = clean_text(get_string('limiteddisabledfeature', 'tool_mobile', $featureparams));
+        $templatesubscribe['message'] = get_string('limitedcustomlangstrings', 'tool_mobile', $featureparams);
 
         $temp->add(new admin_setting_heading(
             'tool_mobile/customlangstringssubscribe',
@@ -420,7 +415,7 @@ if ($hassiteconfig || has_capability('moodle/site:configview', context_system::i
         $templateheadersettings = [
             'title' => new lang_string('lookingforcsscustomisation', 'tool_mobile'),
             'icon' => '💡',
-            'message' => clean_text(get_string('movedcsstopremiumfeatures', 'tool_mobile', $strmovedparams)),
+            'message' => get_string('movedcsstopremiumfeatures', 'tool_mobile', $strmovedparams),
             'extraclasses' => 'alert-info',
         ];
 
@@ -432,7 +427,7 @@ if ($hassiteconfig || has_capability('moodle/site:configview', context_system::i
     }
 
     // Reference to Branded Mobile App.
-    if (empty($CFG->disableserviceads_branded)) {
+    if (api::get_normalized_plan($subscriptiondata) !== 'bma') {
         $temp->add(new admin_setting_description(
             'moodlebrandedappreference',
             new lang_string('moodlebrandedapp', 'admin'),
@@ -493,7 +488,7 @@ if ($hassiteconfig || has_capability('moodle/site:configview', context_system::i
         $templateheadersettings = [
             'title' => new lang_string('lookingforqrcodelogin', 'tool_mobile'),
             'icon' => '🎯',
-            'message' => clean_text(get_string('movedqrtopremiumfeatures', 'tool_mobile', $strmovedparams)),
+            'message' => get_string('movedqrtopremiumfeatures', 'tool_mobile', $strmovedparams),
             'extraclasses' => 'alert-info',
         ];
         $featuresnotice = $OUTPUT->render_from_template('tool_mobile/settings_alert', $templateheadersettings);
@@ -599,7 +594,7 @@ if ($hassiteconfig || has_capability('moodle/site:configview', context_system::i
         $templateheadersettings = [
             'title' => new lang_string('lookingforcustomisationfeatures', 'tool_mobile'),
             'icon' => '🎯',
-            'message' => clean_text(get_string('moveddisabledtopremiumfeatures', 'tool_mobile', $strmovedparams)),
+            'message' => get_string('moveddisabledtopremiumfeatures', 'tool_mobile', $strmovedparams),
             'extraclasses' => 'alert-info',
         ];
         $featuresnotice = $OUTPUT->render_from_template('tool_mobile/settings_alert', $templateheadersettings);
